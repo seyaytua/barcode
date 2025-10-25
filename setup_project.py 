@@ -1,0 +1,540 @@
+import os
+
+# プロジェクト構造を作成
+project_files = {
+    "requirements.txt": """PySide6==6.6.0
+python-barcode==0.15.1
+Pillow==10.1.0
+PyPDF2==3.0.1
+reportlab==4.0.7
+openpyxl==3.1.2
+""",
+
+    "main.py": """import sys
+from PySide6.QtWidgets import QApplication
+from gui.main_window import MainWindow
+
+def main():
+    app = QApplication(sys.argv)
+    app.setStyle('Fusion')
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
+
+if __name__ == '__main__':
+    main()
+""",
+
+    "gui/__init__.py": "",
+
+    "gui/main_window.py": """from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+                                      QPushButton, QLabel, QFileDialog, QMessageBox,
+                                      QTableWidget, QTableWidgetItem, QSpinBox, QGroupBox)
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap, QImage
+from core.barcode_generator import BarcodeGenerator
+from core.pdf_handler import PDFHandler
+from core.excel_handler import ExcelHandler
+import os
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("バーコードPDF印刷システム")
+        self.setGeometry(100, 100, 1200, 800)
+        
+        self.pdf_handler = PDFHandler()
+        self.excel_handler = ExcelHandler()
+        self.barcode_generator = BarcodeGenerator()
+        
+        self.pdf_path = None
+        self.excel_path = None
+        self.barcode_positions = []
+        self.current_page = 0
+        
+        self.init_ui()
+    
+    def init_ui(self):
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QHBoxLayout(central_widget)
+        
+        # 左側パネル（コントロール）
+        left_panel = self.create_left_panel()
+        main_layout.addWidget(left_panel, 1)
+        
+        # 右側パネル（プレビュー）
+        right_panel = self.create_right_panel()
+        main_layout.addWidget(right_panel, 2)
+    
+    def create_left_panel(self):
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        
+        # Excelファイル操作
+        excel_group = QGroupBox("Excelリスト管理")
+        excel_layout = QVBoxLayout()
+        
+        btn_export_template = QPushButton("テンプレートをエクスポート")
+        btn_export_template.clicked.connect(self.export_template)
+        excel_layout.addWidget(btn_export_template)
+        
+        btn_import_excel = QPushButton("Excelリストをインポート")
+        btn_import_excel.clicked.connect(self.import_excel)
+        excel_layout.addWidget(btn_import_excel)
+        
+        self.lbl_excel_status = QLabel("リスト: 未読み込み")
+        excel_layout.addWidget(self.lbl_excel_status)
+        
+        excel_group.setLayout(excel_layout)
+        layout.addWidget(excel_group)
+        
+        # PDFファイル操作
+        pdf_group = QGroupBox("PDF管理")
+        pdf_layout = QVBoxLayout()
+        
+        btn_load_pdf = QPushButton("PDFファイルを読み込む")
+        btn_load_pdf.clicked.connect(self.load_pdf)
+        pdf_layout.addWidget(btn_load_pdf)
+        
+        self.lbl_pdf_status = QLabel("PDF: 未読み込み")
+        pdf_layout.addWidget(self.lbl_pdf_status)
+        
+        # ページナビゲーション
+        page_nav_layout = QHBoxLayout()
+        btn_prev = QPushButton("前のページ")
+        btn_prev.clicked.connect(self.prev_page)
+        page_nav_layout.addWidget(btn_prev)
+        
+        self.lbl_page = QLabel("ページ: 0/0")
+        page_nav_layout.addWidget(self.lbl_page)
+        
+        btn_next = QPushButton("次のページ")
+        btn_next.clicked.connect(self.next_page)
+        page_nav_layout.addWidget(btn_next)
+        
+        pdf_layout.addLayout(page_nav_layout)
+        pdf_group.setLayout(pdf_layout)
+        layout.addWidget(pdf_group)
+        
+        # バーコード位置設定
+        position_group = QGroupBox("バーコード位置")
+        position_layout = QVBoxLayout()
+        
+        self.table_positions = QTableWidget(0, 3)
+        self.table_positions.setHorizontalHeaderLabels(["ページ", "X座標", "Y座標"])
+        position_layout.addWidget(self.table_positions)
+        
+        btn_remove_position = QPushButton("選択位置を削除")
+        btn_remove_position.clicked.connect(self.remove_position)
+        position_layout.addWidget(btn_remove_position)
+        
+        position_group.setLayout(position_layout)
+        layout.addWidget(position_group)
+        
+        # データテーブル
+        data_group = QGroupBox("読み込みデータ")
+        data_layout = QVBoxLayout()
+        
+        self.table_data = QTableWidget(0, 2)
+        self.table_data.setHorizontalHeaderLabels(["バーコード値", "表示名"])
+        data_layout.addWidget(self.table_data)
+        
+        data_group.setLayout(data_layout)
+        layout.addWidget(data_group)
+        
+        # 印刷ボタン
+        btn_print = QPushButton("印刷実行")
+        btn_print.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; font-size: 16px; padding: 10px; }")
+        btn_print.clicked.connect(self.execute_print)
+        layout.addWidget(btn_print)
+        
+        return widget
+    
+    def create_right_panel(self):
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        
+        layout.addWidget(QLabel("PDFプレビュー（クリックでバーコード位置を指定）"))
+        
+        self.preview_label = ClickableLabel()
+        self.preview_label.setAlignment(Qt.AlignCenter)
+        self.preview_label.setStyleSheet("QLabel { background-color: #f0f0f0; border: 2px solid #ccc; }")
+        self.preview_label.setMinimumSize(600, 700)
+        self.preview_label.clicked.connect(self.add_barcode_position)
+        
+        layout.addWidget(self.preview_label)
+        
+        return widget
+    
+    def export_template(self):
+        file_path, _ = QFileDialog.getSaveFileName(self, "テンプレートを保存", "", "Excel Files (*.xlsx)")
+        if file_path:
+            self.excel_handler.export_template(file_path)
+            QMessageBox.information(self, "成功", "テンプレートをエクスポートしました")
+    
+    def import_excel(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Excelファイルを選択", "", "Excel Files (*.xlsx)")
+        if file_path:
+            data = self.excel_handler.import_excel(file_path)
+            if data:
+                self.excel_path = file_path
+                self.lbl_excel_status.setText(f"リスト: {os.path.basename(file_path)} ({len(data)}件)")
+                self.update_data_table(data)
+                QMessageBox.information(self, "成功", f"{len(data)}件のデータを読み込みました")
+    
+    def load_pdf(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "PDFファイルを選択", "", "PDF Files (*.pdf)")
+        if file_path:
+            self.pdf_path = file_path
+            self.pdf_handler.load_pdf(file_path)
+            self.current_page = 0
+            self.lbl_pdf_status.setText(f"PDF: {os.path.basename(file_path)} ({self.pdf_handler.get_page_count()}ページ)")
+            self.update_preview()
+    
+    def update_preview(self):
+        if self.pdf_path:
+            image = self.pdf_handler.get_page_image(self.current_page)
+            if image:
+                qimage = QImage(image.tobytes(), image.width, image.height, image.width * 3, QImage.Format_RGB888)
+                pixmap = QPixmap.fromImage(qimage)
+                scaled_pixmap = pixmap.scaled(self.preview_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                self.preview_label.setPixmap(scaled_pixmap)
+                self.preview_label.original_size = (image.width, image.height)
+                
+                self.lbl_page.setText(f"ページ: {self.current_page + 1}/{self.pdf_handler.get_page_count()}")
+    
+    def prev_page(self):
+        if self.current_page > 0:
+            self.current_page -= 1
+            self.update_preview()
+    
+    def next_page(self):
+        if self.pdf_path and self.current_page < self.pdf_handler.get_page_count() - 1:
+            self.current_page += 1
+            self.update_preview()
+    
+    def add_barcode_position(self, x, y):
+        if not self.pdf_path:
+            QMessageBox.warning(self, "警告", "先にPDFファイルを読み込んでください")
+            return
+        
+        # プレビュー座標を実際のPDF座標に変換
+        if hasattr(self.preview_label, 'original_size'):
+            pixmap = self.preview_label.pixmap()
+            scale_x = self.preview_label.original_size[0] / pixmap.width()
+            scale_y = self.preview_label.original_size[1] / pixmap.height()
+            
+            real_x = int(x * scale_x)
+            real_y = int(y * scale_y)
+            
+            self.barcode_positions.append({
+                'page': self.current_page,
+                'x': real_x,
+                'y': real_y
+            })
+            
+            self.update_position_table()
+    
+    def remove_position(self):
+        current_row = self.table_positions.currentRow()
+        if current_row >= 0:
+            del self.barcode_positions[current_row]
+            self.update_position_table()
+    
+    def update_position_table(self):
+        self.table_positions.setRowCount(len(self.barcode_positions))
+        for i, pos in enumerate(self.barcode_positions):
+            self.table_positions.setItem(i, 0, QTableWidgetItem(str(pos['page'] + 1)))
+            self.table_positions.setItem(i, 1, QTableWidgetItem(str(pos['x'])))
+            self.table_positions.setItem(i, 2, QTableWidgetItem(str(pos['y'])))
+    
+    def update_data_table(self, data):
+        self.table_data.setRowCount(len(data))
+        for i, row in enumerate(data):
+            self.table_data.setItem(i, 0, QTableWidgetItem(str(row['barcode'])))
+            self.table_data.setItem(i, 1, QTableWidgetItem(str(row['name'])))
+    
+    def execute_print(self):
+        if not self.pdf_path:
+            QMessageBox.warning(self, "警告", "PDFファイルを読み込んでください")
+            return
+        
+        if not self.excel_path:
+            QMessageBox.warning(self, "警告", "Excelリストを読み込んでください")
+            return
+        
+        if not self.barcode_positions:
+            QMessageBox.warning(self, "警告", "バーコード位置を指定してください")
+            return
+        
+        output_path, _ = QFileDialog.getSaveFileName(self, "出力PDFを保存", "", "PDF Files (*.pdf)")
+        if output_path:
+            data = self.excel_handler.import_excel(self.excel_path)
+            success = self.pdf_handler.add_barcodes_to_pdf(
+                self.pdf_path,
+                output_path,
+                data,
+                self.barcode_positions,
+                self.barcode_generator
+            )
+            
+            if success:
+                QMessageBox.information(self, "成功", f"バーコード付きPDFを作成しました:\n{output_path}")
+            else:
+                QMessageBox.critical(self, "エラー", "PDF作成中にエラーが発生しました")
+
+
+class ClickableLabel(QLabel):
+    def __init__(self):
+        super().__init__()
+        self.clicked = None
+    
+    def mousePressEvent(self, event):
+        if self.clicked:
+            self.clicked.emit(event.pos().x(), event.pos().y())
+    
+    def connect(self, func):
+        from PySide6.QtCore import Signal, QObject
+        
+        class Signaller(QObject):
+            clicked = Signal(int, int)
+        
+        self.signaller = Signaller()
+        self.clicked = self.signaller.clicked
+        self.clicked.connect(func)
+""",
+
+    "core/__init__.py": "",
+
+    "core/barcode_generator.py": """import barcode
+from barcode.writer import ImageWriter
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
+
+class BarcodeGenerator:
+    def generate_barcode_with_text(self, barcode_value, display_text):
+        '''バーコードと下部テキストを含む画像を生成'''
+        try:
+            # バーコード生成
+            code128 = barcode.get_barcode_class('code128')
+            barcode_instance = code128(str(barcode_value), writer=ImageWriter())
+            
+            # バーコード画像をバイトストリームに保存
+            buffer = BytesIO()
+            barcode_instance.write(buffer, options={
+                'module_width': 0.3,
+                'module_height': 10,
+                'quiet_zone': 2,
+                'font_size': 0,
+                'text_distance': 1,
+                'write_text': False
+            })
+            buffer.seek(0)
+            
+            # バーコード画像を読み込む
+            barcode_img = Image.open(buffer)
+            
+            # テキストを追加するための新しい画像を作成
+            text_height = 30
+            new_height = barcode_img.height + text_height
+            combined_img = Image.new('RGB', (barcode_img.width, new_height), 'white')
+            
+            # バーコードを貼り付け
+            combined_img.paste(barcode_img, (0, 0))
+            
+            # テキストを描画
+            draw = ImageDraw.Draw(combined_img)
+            try:
+                font = ImageFont.truetype("arial.ttf", 16)
+            except:
+                font = ImageFont.load_default()
+            
+            # テキストを中央に配置
+            bbox = draw.textbbox((0, 0), display_text, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_x = (barcode_img.width - text_width) // 2
+            text_y = barcode_img.height + 5
+            
+            draw.text((text_x, text_y), display_text, fill='black', font=font)
+            
+            return combined_img
+            
+        except Exception as e:
+            print(f"バーコード生成エラー: {e}")
+            return None
+""",
+
+    "core/pdf_handler.py": """from PyPDF2 import PdfReader, PdfWriter
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+from io import BytesIO
+from PIL import Image
+import fitz  # PyMuPDF
+
+class PDFHandler:
+    def __init__(self):
+        self.pdf_document = None
+        self.page_count = 0
+    
+    def load_pdf(self, pdf_path):
+        '''PDFファイルを読み込む'''
+        try:
+            self.pdf_document = fitz.open(pdf_path)
+            self.page_count = len(self.pdf_document)
+            return True
+        except Exception as e:
+            print(f"PDF読み込みエラー: {e}")
+            return False
+    
+    def get_page_count(self):
+        '''ページ数を取得'''
+        return self.page_count
+    
+    def get_page_image(self, page_num):
+        '''指定ページの画像を取得'''
+        if not self.pdf_document or page_num >= self.page_count:
+            return None
+        
+        try:
+            page = self.pdf_document[page_num]
+            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            return img
+        except Exception as e:
+            print(f"ページ画像取得エラー: {e}")
+            return None
+    
+    def add_barcodes_to_pdf(self, input_pdf, output_pdf, data_list, positions, barcode_generator):
+        '''PDFにバーコードを追加'''
+        try:
+            reader = PdfReader(input_pdf)
+            writer = PdfWriter()
+            
+            for page_num, page in enumerate(reader.pages):
+                # このページに配置するバーコード位置を取得
+                page_positions = [pos for pos in positions if pos['page'] == page_num]
+                
+                if page_positions and data_list:
+                    # バーコードを含む新しいPDFページを作成
+                    packet = BytesIO()
+                    page_width = float(page.mediabox.width)
+                    page_height = float(page.mediabox.height)
+                    can = canvas.Canvas(packet, pagesize=(page_width, page_height))
+                    
+                    # 各データに対してバーコードを生成
+                    for i, data in enumerate(data_list):
+                        if i >= len(page_positions):
+                            break
+                        
+                        pos = page_positions[i]
+                        barcode_img = barcode_generator.generate_barcode_with_text(
+                            data['barcode'],
+                            data['name']
+                        )
+                        
+                        if barcode_img:
+                            # 一時ファイルに保存
+                            temp_buffer = BytesIO()
+                            barcode_img.save(temp_buffer, format='PNG')
+                            temp_buffer.seek(0)
+                            
+                            # PDFに描画（Y座標を反転）
+                            y_coord = page_height - pos['y'] - 100
+                            can.drawImage(temp_buffer, pos['x'], y_coord, 
+                                        width=200, height=100, mask='auto')
+                    
+                    can.save()
+                    packet.seek(0)
+                    
+                    # バーコードページと元のページをマージ
+                    barcode_pdf = PdfReader(packet)
+                    page.merge_page(barcode_pdf.pages[0])
+                
+                writer.add_page(page)
+            
+            # 出力PDFを保存
+            with open(output_pdf, 'wb') as output_file:
+                writer.write(output_file)
+            
+            return True
+            
+        except Exception as e:
+            print(f"PDF作成エラー: {e}")
+            return False
+""",
+
+    "core/excel_handler.py": """import openpyxl
+from openpyxl import Workbook
+
+class ExcelHandler:
+    def export_template(self, file_path):
+        '''テンプレートExcelファイルを作成'''
+        try:
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "バーコードリスト"
+            
+            # ヘッダー
+            ws['A1'] = 'バーコード値'
+            ws['B1'] = '表示名'
+            
+            # サンプルデータ
+            ws['A2'] = '123456789'
+            ws['B2'] = 'サンプル商品A'
+            ws['A3'] = '987654321'
+            ws['B3'] = 'サンプル商品B'
+            
+            # 列幅を調整
+            ws.column_dimensions['A'].width = 20
+            ws.column_dimensions['B'].width = 30
+            
+            wb.save(file_path)
+            return True
+        except Exception as e:
+            print(f"テンプレート作成エラー: {e}")
+            return False
+    
+    def import_excel(self, file_path):
+        '''Excelファイルからデータを読み込む'''
+        try:
+            wb = openpyxl.load_workbook(file_path)
+            ws = wb.active
+            
+            data = []
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                if row[0] and row[1]:  # 両方の列にデータがある場合のみ
+                    data.append({
+                        'barcode': str(row[0]),
+                        'name': str(row[1])
+                    })
+            
+            return data
+        except Exception as e:
+            print(f"Excel読み込みエラー: {e}")
+            return []
+"""
+}
+
+# ファイルを作成
+def create_project_structure():
+    print("プロジェクトファイルを作成中...")
+    
+    for file_path, content in project_files.items():
+        # ディレクトリを作成
+        directory = os.path.dirname(file_path)
+        if directory and not os.path.exists(directory):
+            os.makedirs(directory)
+            print(f"ディレクトリ作成: {directory}")
+        
+        # ファイルを作成
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        print(f"ファイル作成: {file_path}")
+    
+    print("\n完了！以下のコマンドで実行してください:")
+    print("pip install -r requirements.txt")
+    print("python main.py")
+
+if __name__ == '__main__':
+    create_project_structure()
