@@ -1,10 +1,12 @@
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                       QPushButton, QLabel, QFileDialog, QMessageBox,
                                       QTableWidget, QTableWidgetItem, QSpinBox, QGroupBox,
-                                      QScrollArea, QComboBox, QTextEdit, QDialog, QDialogButtonBox)
+                                      QScrollArea, QComboBox, QTextEdit, QDialog, QDialogButtonBox,
+                                      QRadioButton, QButtonGroup)
 from PySide6.QtCore import Qt, Signal, QObject, QRect, QPoint, QRectF
 from PySide6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QBrush
 from core.barcode_generator import BarcodeGenerator
+from core.qrcode_generator import QRCodeGenerator
 from core.pdf_handler import PDFHandler
 from core.excel_handler import ExcelHandler
 import os
@@ -58,17 +60,21 @@ class ToggleButton(QPushButton):
             """)
 
 class SizeSettingsDialog(QDialog):
-    '''バーコードサイズ設定ダイアログ'''
-    def __init__(self, current_sizes, parent=None):
+    '''バーコード/QRコードサイズ設定ダイアログ'''
+    def __init__(self, current_sizes, is_qrcode=False, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("バーコードサイズ設定")
+        self.setWindowTitle("QRコードサイズ設定" if is_qrcode else "バーコードサイズ設定")
         self.setModal(True)
         self.current_sizes = current_sizes.copy()
+        self.is_qrcode = is_qrcode
         
         layout = QVBoxLayout(self)
         
         # 説明
-        info_label = QLabel("各サイズの幅と高さを設定してください（単位: ピクセル）")
+        if is_qrcode:
+            info_label = QLabel("各サイズの大きさを設定してください（単位: ピクセル、正方形）")
+        else:
+            info_label = QLabel("各サイズの幅と高さを設定してください（単位: ピクセル）")
         layout.addWidget(info_label)
         
         # サイズ設定
@@ -77,22 +83,31 @@ class SizeSettingsDialog(QDialog):
             group = QGroupBox(f"サイズ: {size_name}")
             group_layout = QHBoxLayout()
             
-            group_layout.addWidget(QLabel("幅:"))
-            width_spin = QSpinBox()
-            width_spin.setRange(50, 500)
-            width_spin.setValue(current_sizes[size_name][0])
-            group_layout.addWidget(width_spin)
-            
-            group_layout.addWidget(QLabel("高さ:"))
-            height_spin = QSpinBox()
-            height_spin.setRange(30, 300)
-            height_spin.setValue(current_sizes[size_name][1])
-            group_layout.addWidget(height_spin)
+            if is_qrcode:
+                # QRコードは正方形
+                group_layout.addWidget(QLabel("サイズ:"))
+                size_spin = QSpinBox()
+                size_spin.setRange(50, 300)
+                size_spin.setValue(current_sizes[size_name][0])
+                group_layout.addWidget(size_spin)
+                self.spinboxes[size_name] = (size_spin, None)
+            else:
+                # バーコードは幅と高さ
+                group_layout.addWidget(QLabel("幅:"))
+                width_spin = QSpinBox()
+                width_spin.setRange(50, 500)
+                width_spin.setValue(current_sizes[size_name][0])
+                group_layout.addWidget(width_spin)
+                
+                group_layout.addWidget(QLabel("高さ:"))
+                height_spin = QSpinBox()
+                height_spin.setRange(30, 300)
+                height_spin.setValue(current_sizes[size_name][1])
+                group_layout.addWidget(height_spin)
+                self.spinboxes[size_name] = (width_spin, height_spin)
             
             group.setLayout(group_layout)
             layout.addWidget(group)
-            
-            self.spinboxes[size_name] = (width_spin, height_spin)
         
         # プリセットボタン
         preset_group = QGroupBox("プリセット")
@@ -121,30 +136,50 @@ class SizeSettingsDialog(QDialog):
     
     def apply_compact_preset(self):
         '''コンパクトプリセット'''
-        presets = {'小': (100, 50), '中': (130, 70), '大': (160, 90)}
+        if self.is_qrcode:
+            presets = {'小': (60, 60), '中': (80, 80), '大': (100, 100)}
+        else:
+            presets = {'小': (100, 50), '中': (130, 70), '大': (160, 90)}
+        
         for size_name, (width, height) in presets.items():
             self.spinboxes[size_name][0].setValue(width)
-            self.spinboxes[size_name][1].setValue(height)
+            if self.spinboxes[size_name][1]:
+                self.spinboxes[size_name][1].setValue(height)
     
     def apply_standard_preset(self):
         '''標準プリセット'''
-        presets = {'小': (120, 60), '中': (150, 80), '大': (180, 100)}
+        if self.is_qrcode:
+            presets = {'小': (80, 80), '中': (100, 100), '大': (120, 120)}
+        else:
+            presets = {'小': (120, 60), '中': (150, 80), '大': (180, 100)}
+        
         for size_name, (width, height) in presets.items():
             self.spinboxes[size_name][0].setValue(width)
-            self.spinboxes[size_name][1].setValue(height)
+            if self.spinboxes[size_name][1]:
+                self.spinboxes[size_name][1].setValue(height)
     
     def apply_large_preset(self):
         '''大きめプリセット'''
-        presets = {'小': (150, 80), '中': (200, 100), '大': (250, 130)}
+        if self.is_qrcode:
+            presets = {'小': (100, 100), '中': (130, 130), '大': (160, 160)}
+        else:
+            presets = {'小': (150, 80), '中': (200, 100), '大': (250, 130)}
+        
         for size_name, (width, height) in presets.items():
             self.spinboxes[size_name][0].setValue(width)
-            self.spinboxes[size_name][1].setValue(height)
+            if self.spinboxes[size_name][1]:
+                self.spinboxes[size_name][1].setValue(height)
     
     def get_sizes(self):
         '''設定されたサイズを取得'''
         sizes = {}
         for size_name, (width_spin, height_spin) in self.spinboxes.items():
-            sizes[size_name] = (width_spin.value(), height_spin.value())
+            if height_spin:
+                sizes[size_name] = (width_spin.value(), height_spin.value())
+            else:
+                # QRコードは正方形
+                size = width_spin.value()
+                sizes[size_name] = (size, size)
         return sizes
 
 class ClickableLabel(QLabel):
@@ -217,7 +252,7 @@ class ClickableLabel(QLabel):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("バーコードPDF印刷システム")
+        self.setWindowTitle("バーコード/QRコードPDF印刷システム")
         self.setGeometry(100, 100, 1200, 800)
         
         # デフォルトサイズ（小さめに設定）
@@ -227,9 +262,16 @@ class MainWindow(QMainWindow):
             '大': (180, 100)
         }
         
+        self.QRCODE_SIZES = {
+            '小': (80, 80),
+            '中': (100, 100),
+            '大': (120, 120)
+        }
+        
         self.pdf_handler = PDFHandler()
         self.excel_handler = ExcelHandler()
         self.barcode_generator = BarcodeGenerator()
+        self.qrcode_generator = QRCodeGenerator()
         
         self.pdf_path = None
         self.excel_path = None
@@ -237,8 +279,9 @@ class MainWindow(QMainWindow):
         self.current_page = 0
         self.current_scale = 1.0
         self.original_page_size = (0, 0)
-        self.current_barcode_size = '中'
+        self.current_code_size = '中'
         self.is_continuous_mode = True
+        self.is_qrcode_mode = False  # False: バーコード, True: QRコード
         
         self.init_ui()
     
@@ -256,6 +299,22 @@ class MainWindow(QMainWindow):
     def create_left_panel(self):
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        
+        # コードタイプ選択
+        code_type_group = QGroupBox("コードタイプ")
+        code_type_layout = QVBoxLayout()
+        
+        self.radio_barcode = QRadioButton("バーコード")
+        self.radio_qrcode = QRadioButton("QRコード")
+        self.radio_barcode.setChecked(True)
+        
+        self.radio_barcode.toggled.connect(self.on_code_type_changed)
+        
+        code_type_layout.addWidget(self.radio_barcode)
+        code_type_layout.addWidget(self.radio_qrcode)
+        
+        code_type_group.setLayout(code_type_layout)
+        layout.addWidget(code_type_group)
         
         # モード切り替え
         mode_group = QGroupBox("印刷モード")
@@ -324,17 +383,17 @@ class MainWindow(QMainWindow):
         pdf_group.setLayout(pdf_layout)
         layout.addWidget(pdf_group)
         
-        size_group = QGroupBox("バーコードサイズ")
+        size_group = QGroupBox("サイズ")
         size_layout = QVBoxLayout()
         
         size_select_layout = QHBoxLayout()
         size_select_layout.addWidget(QLabel("サイズ:"))
         
-        self.combo_barcode_size = QComboBox()
-        self.combo_barcode_size.addItems(['小', '中', '大'])
-        self.combo_barcode_size.setCurrentText('中')
-        self.combo_barcode_size.currentTextChanged.connect(self.on_barcode_size_changed)
-        size_select_layout.addWidget(self.combo_barcode_size)
+        self.combo_code_size = QComboBox()
+        self.combo_code_size.addItems(['小', '中', '大'])
+        self.combo_code_size.setCurrentText('中')
+        self.combo_code_size.currentTextChanged.connect(self.on_code_size_changed)
+        size_select_layout.addWidget(self.combo_code_size)
         
         btn_size_settings = QPushButton("⚙️ 設定")
         btn_size_settings.clicked.connect(self.open_size_settings)
@@ -348,7 +407,7 @@ class MainWindow(QMainWindow):
         size_group.setLayout(size_layout)
         layout.addWidget(size_group)
         
-        position_group = QGroupBox("バーコード位置")
+        position_group = QGroupBox("配置位置")
         position_layout = QVBoxLayout()
         
         self.table_positions = QTableWidget(0, 4)
@@ -373,7 +432,7 @@ class MainWindow(QMainWindow):
         data_layout = QVBoxLayout()
         
         self.table_data = QTableWidget(0, 2)
-        self.table_data.setHorizontalHeaderLabels(["バーコード値", "表示名"])
+        self.table_data.setHorizontalHeaderLabels(["コード値", "表示名"])
         data_layout.addWidget(self.table_data)
         
         data_group.setLayout(data_layout)
@@ -394,32 +453,58 @@ class MainWindow(QMainWindow):
         widget = QWidget()
         layout = QVBoxLayout(widget)
         
-        info_label = QLabel("PDFプレビュー（クリックでバーコード位置を指定）\n赤い矩形がバーコードの配置範囲です")
-        info_label.setStyleSheet("QLabel { color: red; font-weight: bold; }")
-        layout.addWidget(info_label)
+        self.info_label = QLabel("PDFプレビュー（クリックで配置位置を指定）\n赤い矩形が配置範囲です")
+        self.info_label.setStyleSheet("QLabel { color: red; font-weight: bold; }")
+        layout.addWidget(self.info_label)
         
         self.preview_label = ClickableLabel()
         self.preview_label.setAlignment(Qt.AlignCenter)
         self.preview_label.setStyleSheet("QLabel { background-color: #f0f0f0; border: 2px solid #ccc; }")
         self.preview_label.setMinimumSize(600, 700)
-        self.preview_label.clicked.connect(self.add_barcode_position)
+        self.preview_label.clicked.connect(self.add_code_position)
         
         layout.addWidget(self.preview_label)
         
         return widget
     
+    def on_code_type_changed(self):
+        '''コードタイプ変更時の処理'''
+        self.is_qrcode_mode = self.radio_qrcode.isChecked()
+        
+        # サイズ情報を更新
+        sizes = self.QRCODE_SIZES if self.is_qrcode_mode else self.BARCODE_SIZES
+        size = sizes[self.current_code_size]
+        if self.is_qrcode_mode:
+            self.lbl_size_info.setText(f"現在: {size[0]}x{size[0]}px（正方形）")
+        else:
+            self.lbl_size_info.setText(f"現在: {size[0]}x{size[1]}px")
+        
+        # プレビューを更新
+        if self.pdf_path:
+            self.restore_page_markers()
+    
     def open_size_settings(self):
         '''サイズ設定ダイアログを開く'''
-        dialog = SizeSettingsDialog(self.BARCODE_SIZES, self)
+        sizes = self.QRCODE_SIZES if self.is_qrcode_mode else self.BARCODE_SIZES
+        dialog = SizeSettingsDialog(sizes, self.is_qrcode_mode, self)
         if dialog.exec() == QDialog.Accepted:
-            self.BARCODE_SIZES = dialog.get_sizes()
+            if self.is_qrcode_mode:
+                self.QRCODE_SIZES = dialog.get_sizes()
+            else:
+                self.BARCODE_SIZES = dialog.get_sizes()
+            
             # 現在のサイズ情報を更新
-            width, height = self.BARCODE_SIZES[self.current_barcode_size]
-            self.lbl_size_info.setText(f"現在: {width}x{height}px")
+            sizes = self.QRCODE_SIZES if self.is_qrcode_mode else self.BARCODE_SIZES
+            size = sizes[self.current_code_size]
+            if self.is_qrcode_mode:
+                self.lbl_size_info.setText(f"現在: {size[0]}x{size[0]}px（正方形）")
+            else:
+                self.lbl_size_info.setText(f"現在: {size[0]}x{size[1]}px")
+            
             # プレビューを更新
             if self.pdf_path:
                 self.restore_page_markers()
-            QMessageBox.information(self, "成功", "バーコードサイズを更新しました")
+            QMessageBox.information(self, "成功", "サイズを更新しました")
     
     def on_mode_changed(self):
         self.is_continuous_mode = self.toggle_mode.isChecked()
@@ -433,10 +518,10 @@ class MainWindow(QMainWindow):
                 "各レコードごとに全ページを複製します。\n\n"
                 "例: 2レコード、2ページPDF、各ページ2箇所指定\n"
                 "→ 出力: 4ページ\n"
-                "  ・1ページ目: レコード1のバーコード×2\n"
-                "  ・2ページ目: レコード1のバーコード×2\n"
-                "  ・3ページ目: レコード2のバーコード×2\n"
-                "  ・4ページ目: レコード2のバーコード×2"
+                "  ・1ページ目: レコード1のコード×2\n"
+                "  ・2ページ目: レコード1のコード×2\n"
+                "  ・3ページ目: レコード2のコード×2\n"
+                "  ・4ページ目: レコード2のコード×2"
             )
         else:
             desc = (
@@ -444,18 +529,22 @@ class MainWindow(QMainWindow):
                 "1つのPDFに全レコードを順番に配置します。\n\n"
                 "例: 2レコード、2ページPDF、各ページ2箇所指定\n"
                 "→ 出力: 2ページ\n"
-                "  ・1ページ目: レコード1のバーコード(位置1)\n"
-                "              レコード2のバーコード(位置2)\n"
-                "  ・2ページ目: レコード1のバーコード(位置1)\n"
-                "              レコード2のバーコード(位置2)"
+                "  ・1ページ目: レコード1のコード(位置1)\n"
+                "              レコード2のコード(位置2)\n"
+                "  ・2ページ目: レコード1のコード(位置1)\n"
+                "              レコード2のコード(位置2)"
             )
         
         self.lbl_mode_desc.setText(desc)
     
-    def on_barcode_size_changed(self, size_text):
-        self.current_barcode_size = size_text
-        width, height = self.BARCODE_SIZES[size_text]
-        self.lbl_size_info.setText(f"現在: {width}x{height}px")
+    def on_code_size_changed(self, size_text):
+        self.current_code_size = size_text
+        sizes = self.QRCODE_SIZES if self.is_qrcode_mode else self.BARCODE_SIZES
+        size = sizes[size_text]
+        if self.is_qrcode_mode:
+            self.lbl_size_info.setText(f"現在: {size[0]}x{size[0]}px（正方形）")
+        else:
+            self.lbl_size_info.setText(f"現在: {size[0]}x{size[1]}px")
         
         if self.pdf_path:
             self.restore_page_markers()
@@ -469,14 +558,14 @@ class MainWindow(QMainWindow):
             if self.is_continuous_mode:
                 total_pages = record_count * page_count
                 
-                barcode_per_page = {}
+                code_per_page = {}
                 for pos in self.barcode_positions:
                     page = pos['page']
-                    barcode_per_page[page] = barcode_per_page.get(page, 0) + 1
+                    code_per_page[page] = code_per_page.get(page, 0) + 1
                 
                 info_text = f"出力予測: {total_pages}ページ ({record_count}レコード × {page_count}ページ)"
-                if barcode_per_page:
-                    info_text += f"\n各ページのバーコード数: {dict(sorted(barcode_per_page.items()))}"
+                if code_per_page:
+                    info_text += f"\n各ページのコード数: {dict(sorted(code_per_page.items()))}"
             else:
                 total_pages = page_count
                 total_positions = len(self.barcode_positions)
@@ -564,9 +653,10 @@ class MainWindow(QMainWindow):
             preview_x = render_x * self.current_scale
             preview_y = render_y * self.current_scale
             
-            barcode_width, barcode_height = self.BARCODE_SIZES[pos['size']]
-            preview_width = barcode_width * self.current_scale * render_size[0] / pdf_page_size[0]
-            preview_height = barcode_height * self.current_scale * render_size[1] / pdf_page_size[1]
+            sizes = self.QRCODE_SIZES if self.is_qrcode_mode else self.BARCODE_SIZES
+            code_width, code_height = sizes[pos['size']]
+            preview_width = code_width * self.current_scale * render_size[0] / pdf_page_size[0]
+            preview_height = code_height * self.current_scale * render_size[1] / pdf_page_size[1]
             
             self.preview_label.add_marker(preview_x, preview_y, preview_width, preview_height)
     
@@ -580,7 +670,7 @@ class MainWindow(QMainWindow):
             self.current_page += 1
             self.update_preview()
     
-    def add_barcode_position(self, x, y):
+    def add_code_position(self, x, y):
         if not self.pdf_path:
             QMessageBox.warning(self, "警告", "先にPDFファイルを読み込んでください")
             return
@@ -601,12 +691,13 @@ class MainWindow(QMainWindow):
                 'page': self.current_page,
                 'x': real_x,
                 'y': real_y,
-                'size': self.current_barcode_size
+                'size': self.current_code_size
             })
             
-            barcode_width, barcode_height = self.BARCODE_SIZES[self.current_barcode_size]
-            preview_width = barcode_width * self.current_scale * render_size[0] / pdf_page_size[0]
-            preview_height = barcode_height * self.current_scale * render_size[1] / pdf_page_size[1]
+            sizes = self.QRCODE_SIZES if self.is_qrcode_mode else self.BARCODE_SIZES
+            code_width, code_height = sizes[self.current_code_size]
+            preview_width = code_width * self.current_scale * render_size[0] / pdf_page_size[0]
+            preview_height = code_height * self.current_scale * render_size[1] / pdf_page_size[1]
             
             self.preview_label.add_marker(x, y, preview_width, preview_height)
             
@@ -651,44 +742,51 @@ class MainWindow(QMainWindow):
             return
         
         if not self.barcode_positions:
-            QMessageBox.warning(self, "警告", "バーコード位置を指定してください")
+            QMessageBox.warning(self, "警告", "配置位置を指定してください")
             return
         
         output_path, _ = QFileDialog.getSaveFileName(self, "出力PDFを保存", "", "PDF Files (*.pdf)")
         if output_path:
             data = self.excel_handler.import_excel(self.excel_path)
             
+            # 使用するジェネレーターとサイズを選択
+            generator = self.qrcode_generator if self.is_qrcode_mode else self.barcode_generator
+            sizes = self.QRCODE_SIZES if self.is_qrcode_mode else self.BARCODE_SIZES
+            code_type = "QRコード" if self.is_qrcode_mode else "バーコード"
+            
             if self.is_continuous_mode:
-                success = self.pdf_handler.add_barcodes_continuous(
+                success = self.pdf_handler.add_codes_continuous(
                     self.pdf_path,
                     output_path,
                     data,
                     self.barcode_positions,
-                    self.barcode_generator,
-                    self.BARCODE_SIZES
+                    generator,
+                    sizes,
+                    self.is_qrcode_mode
                 )
                 
                 if success:
                     total_pages = len(data) * self.pdf_handler.get_page_count()
                     QMessageBox.information(self, "成功", 
-                        f"バーコード付きPDFを作成しました:\n{output_path}\n\n"
+                        f"{code_type}付きPDFを作成しました:\n{output_path}\n\n"
                         f"モード: 連続印刷\n"
                         f"総ページ数: {total_pages}ページ")
                 else:
                     QMessageBox.critical(self, "エラー", "PDF作成中にエラーが発生しました")
             else:
-                success = self.pdf_handler.add_barcodes_batch(
+                success = self.pdf_handler.add_codes_batch(
                     self.pdf_path,
                     output_path,
                     data,
                     self.barcode_positions,
-                    self.barcode_generator,
-                    self.BARCODE_SIZES
+                    generator,
+                    sizes,
+                    self.is_qrcode_mode
                 )
                 
                 if success:
                     QMessageBox.information(self, "成功", 
-                        f"バーコード付きPDFを作成しました:\n{output_path}\n\n"
+                        f"{code_type}付きPDFを作成しました:\n{output_path}\n\n"
                         f"モード: 一括配置\n"
                         f"総ページ数: {self.pdf_handler.get_page_count()}ページ")
                 else:

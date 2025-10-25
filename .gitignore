@@ -7,6 +7,12 @@ __pycache__/
 venv/
 env/
 ENV/
+build/
+dist/
+*.egg-info/
+
+# PyInstaller
+*.spec
 
 # IDE
 .vscode/
@@ -22,3 +28,7 @@ Thumbs.db
 *.pdf
 *.xlsx
 test_*.py
+
+# 不正なファイル名
+*]
+* 

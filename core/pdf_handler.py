@@ -1,6 +1,5 @@
 from PyPDF2 import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import letter
 from io import BytesIO
 from PIL import Image
 import fitz
@@ -49,22 +48,19 @@ class PDFHandler:
             print(f"ページ画像取得エラー: {e}")
             return None
     
-    def _add_barcode_to_canvas(self, can, barcode_img, x, y, width, height):
-        '''超高品質でバーコードをキャンバスに追加'''
-        # さらに高解像度で保存（2倍スケール）
+    def _add_code_to_canvas(self, can, code_img, x, y, width, height):
+        '''超高品質でコードをキャンバスに追加'''
         scale_factor = 2
-        high_res_img = barcode_img.resize(
+        high_res_img = code_img.resize(
             (int(width * scale_factor), int(height * scale_factor)), 
             Image.Resampling.LANCZOS
         )
         
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
             temp_path = temp_file.name
-            # 最高品質PNG保存（圧縮なし）
             high_res_img.save(temp_path, format='PNG', optimize=False, compress_level=0, dpi=(300, 300))
         
         try:
-            # PDFに埋め込み
             from reportlab.lib.utils import ImageReader
             can.drawImage(temp_path, x, y, 
                         width=width, height=height, 
@@ -73,11 +69,8 @@ class PDFHandler:
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
     
-    def add_barcodes_continuous(self, input_pdf, output_pdf, data_list, positions, barcode_generator, size_dict):
-        '''
-        連続印刷モード: 各データレコードごとにPDFページを複製し、
-        指定された全ての位置に同じバーコードを印字
-        '''
+    def add_codes_continuous(self, input_pdf, output_pdf, data_list, positions, generator, size_dict, is_qrcode=False):
+        '''連続印刷モード'''
         try:
             reader = PdfReader(input_pdf)
             writer = PdfWriter()
@@ -95,21 +88,28 @@ class PDFHandler:
                         can = canvas.Canvas(packet, pagesize=(page_width, page_height))
                         
                         for pos in page_positions:
-                            barcode_width, barcode_height = size_dict[pos['size']]
+                            code_width, code_height = size_dict[pos['size']]
                             
-                            barcode_img = barcode_generator.generate_barcode_with_text(
-                                data['barcode'],
-                                data['name'],
-                                barcode_width,
-                                barcode_height
-                            )
+                            if is_qrcode:
+                                code_img = generator.generate_qrcode_with_text(
+                                    data['barcode'],
+                                    data['name'],
+                                    code_width
+                                )
+                            else:
+                                code_img = generator.generate_barcode_with_text(
+                                    data['barcode'],
+                                    data['name'],
+                                    code_width,
+                                    code_height
+                                )
                             
-                            if barcode_img:
+                            if code_img:
                                 pdf_x = pos['x']
-                                pdf_y = page_height - pos['y'] - barcode_height
+                                pdf_y = page_height - pos['y'] - code_height
                                 
-                                self._add_barcode_to_canvas(can, barcode_img, pdf_x, pdf_y, 
-                                                          barcode_width, barcode_height)
+                                self._add_code_to_canvas(can, code_img, pdf_x, pdf_y, 
+                                                       code_width, code_height)
                         
                         can.save()
                         packet.seek(0)
@@ -119,7 +119,6 @@ class PDFHandler:
                     
                     writer.add_page(page)
             
-            # 圧縮を無効にして保存
             with open(output_pdf, 'wb') as output_file:
                 writer.write(output_file)
             
@@ -131,10 +130,8 @@ class PDFHandler:
             traceback.print_exc()
             return False
     
-    def add_barcodes_batch(self, input_pdf, output_pdf, data_list, positions, barcode_generator, size_dict):
-        '''
-        一括配置モード: 1つのPDFに全レコードを順番に配置
-        '''
+    def add_codes_batch(self, input_pdf, output_pdf, data_list, positions, generator, size_dict, is_qrcode=False):
+        '''一括配置モード'''
         try:
             reader = PdfReader(input_pdf)
             writer = PdfWriter()
@@ -153,21 +150,28 @@ class PDFHandler:
                             break
                         
                         pos = page_positions[i]
-                        barcode_width, barcode_height = size_dict[pos['size']]
+                        code_width, code_height = size_dict[pos['size']]
                         
-                        barcode_img = barcode_generator.generate_barcode_with_text(
-                            data['barcode'],
-                            data['name'],
-                            barcode_width,
-                            barcode_height
-                        )
+                        if is_qrcode:
+                            code_img = generator.generate_qrcode_with_text(
+                                data['barcode'],
+                                data['name'],
+                                code_width
+                            )
+                        else:
+                            code_img = generator.generate_barcode_with_text(
+                                data['barcode'],
+                                data['name'],
+                                code_width,
+                                code_height
+                            )
                         
-                        if barcode_img:
+                        if code_img:
                             pdf_x = pos['x']
-                            pdf_y = page_height - pos['y'] - barcode_height
+                            pdf_y = page_height - pos['y'] - code_height
                             
-                            self._add_barcode_to_canvas(can, barcode_img, pdf_x, pdf_y, 
-                                                      barcode_width, barcode_height)
+                            self._add_code_to_canvas(can, code_img, pdf_x, pdf_y, 
+                                                   code_width, code_height)
                     
                     can.save()
                     packet.seek(0)
