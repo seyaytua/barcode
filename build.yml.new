@@ -1,0 +1,177 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+      
+      - name: Build executable with spec
+        run: |
+          pyinstaller barcode.spec
+      
+      - name: List dist directory contents
+        run: |
+          Get-ChildItem -Path dist -Recurse
+        shell: pwsh
+      
+      - name: Create README for distribution
+        run: |
+          echo "# Barcode QR Code PDF - Windows版" > dist/README.txt
+          echo "" >> dist/README.txt
+          echo "## インストール方法" >> dist/README.txt
+          echo "1. ZIPファイルを展開してください" >> dist/README.txt
+          echo "2. BarcodeQRCodePDF.exe を実行してください" >> dist/README.txt
+          echo "" >> dist/README.txt
+          echo "## 使用方法" >> dist/README.txt
+          echo "詳細な使用方法は、GitHubのREADMEをご覧ください：" >> dist/README.txt
+          echo "https://github.com/seyaytua/barcode" >> dist/README.txt
+          echo "" >> dist/README.txt
+          echo "## システム要件" >> dist/README.txt
+          echo "- Windows 10/11 (64-bit)" >> dist/README.txt
+          echo "" >> dist/README.txt
+          echo "## トラブルシューティング" >> dist/README.txt
+          echo "- Windows Defenderで警告が出る場合は、「詳細情報」をクリックして「実行」を選択してください" >> dist/README.txt
+          echo "- 起動しない場合は、管理者権限で実行してみてください" >> dist/README.txt
+        shell: bash
+      
+      - name: Create ZIP archive
+        run: |
+          # ファイルの存在を確認
+          if (Test-Path "dist\BarcodeQRCodePDF.exe") {
+            Write-Host "✓ Found BarcodeQRCodePDF.exe"
+            Compress-Archive -Path dist\BarcodeQRCodePDF.exe, dist\README.txt -DestinationPath BarcodeQRCodePDF-Windows-${{ github.ref_name }}.zip
+          } elseif (Test-Path "dist\barcode.exe") {
+            Write-Host "✓ Found barcode.exe (renaming to BarcodeQRCodePDF.exe)"
+            Move-Item dist\barcode.exe dist\BarcodeQRCodePDF.exe
+            Compress-Archive -Path dist\BarcodeQRCodePDF.exe, dist\README.txt -DestinationPath BarcodeQRCodePDF-Windows-${{ github.ref_name }}.zip
+          } else {
+            Write-Host "✗ No exe file found in dist/"
+            Get-ChildItem dist\
+            exit 1
+          }
+        shell: pwsh
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-executable
+          path: BarcodeQRCodePDF-Windows-${{ github.ref_name }}.zip
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+      
+      - name: Build application
+        run: |
+          pyinstaller barcode.spec
+      
+      - name: List dist directory contents
+        run: |
+          ls -lR dist/
+      
+      - name: Create DMG
+        run: |
+          # ファイルの存在を確認
+          if [ -d "dist/BarcodeQRCodePDF.app" ]; then
+            echo "✓ Found BarcodeQRCodePDF.app"
+            APP_PATH="dist/BarcodeQRCodePDF.app"
+          elif [ -d "dist/barcode.app" ]; then
+            echo "✓ Found barcode.app (renaming to BarcodeQRCodePDF.app)"
+            mv dist/barcode.app dist/BarcodeQRCodePDF.app
+            APP_PATH="dist/BarcodeQRCodePDF.app"
+          else
+            echo "✗ No .app bundle found in dist/"
+            ls -la dist/
+            exit 1
+          fi
+          
+          # DMGを作成（失敗したらZIPにフォールバック）
+          brew install create-dmg
+          mkdir -p dist/dmg
+          cp -r "$APP_PATH" dist/dmg/
+          create-dmg \
+            --volname "BarcodeQRCodePDF" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --app-drop-link 450 185 \
+            "BarcodeQRCodePDF-macOS-${{ github.ref_name }}.dmg" \
+            "dist/dmg/" || true
+          
+          # create-dmgが失敗した場合は、単純なZIPアーカイブを作成
+          if [ ! -f "BarcodeQRCodePDF-macOS-${{ github.ref_name }}.dmg" ]; then
+            echo "DMG creation failed, creating ZIP archive instead"
+            cd dist && zip -r ../BarcodeQRCodePDF-macOS-${{ github.ref_name }}.zip BarcodeQRCodePDF.app
+          fi
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-executable
+          path: BarcodeQRCodePDF-macOS-${{ github.ref_name }}.*
+
+  create-release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-executable
+          path: ./release
+      
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-executable
+          path: ./release
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./release/*
+          generate_release_notes: true
+          body: |
+            ## ダウンロード
+            
+            ### Windows版
+            `BarcodeQRCodePDF-Windows-${{ github.ref_name }}.zip` をダウンロードして展開後、`BarcodeQRCodePDF.exe` を実行してください。
+            
+            ### macOS版
+            `BarcodeQRCodePDF-macOS-${{ github.ref_name }}.dmg` または `.zip` をダウンロードして実行してください。
+            
+            ## 変更点
+            詳細な変更点は下記を参照してください。
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
