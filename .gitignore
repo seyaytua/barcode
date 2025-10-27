@@ -11,8 +11,8 @@ build/
 dist/
 *.egg-info/
 
-# PyInstaller output (but keep the spec file)
-# Note: barcode.spec and version_info.txt are needed for build
+# PyInstaller
+*.spec
 
 # IDE
 .vscode/
