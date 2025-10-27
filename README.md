@@ -4,6 +4,7 @@ PythonとPySide6を使用したバーコード・QRコードPDF印刷アプリ�
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
+![Version](https://img.shields.io/badge/version-1.3.0-green.svg)
 
 ## 機能
 

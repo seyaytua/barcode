@@ -9,6 +9,7 @@ from core.barcode_generator import BarcodeGenerator
 from core.qrcode_generator import QRCodeGenerator
 from core.pdf_handler import PDFHandler
 from core.excel_handler import ExcelHandler
+from version import __version__, __app_name__
 import os
 
 class ToggleButton(QPushButton):
@@ -252,7 +253,7 @@ class ClickableLabel(QLabel):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("バーコード/QRコードPDF印刷システム")
+        self.setWindowTitle(f"{__app_name__} v{__version__}")
         self.setGeometry(100, 100, 1200, 800)
         
         # デフォルトサイズ（小さめに設定）
