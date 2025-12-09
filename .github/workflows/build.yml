@@ -32,7 +32,7 @@ jobs:
           echo "" >> dist/README.txt
           echo "## インストール方法" >> dist/README.txt
           echo "1. ZIPファイルを展開してください" >> dist/README.txt
-          echo "2. BarcodeQRCodePDF.exe を実行してください" >> dist/README.txt
+          echo "2. BarcodeQRCodePDF_v2.exe を実行してください" >> dist/README.txt
           echo "" >> dist/README.txt
           echo "## 使用方法" >> dist/README.txt
           echo "詳細な使用方法は、GitHubのREADMEをご覧ください：" >> dist/README.txt
@@ -48,14 +48,14 @@ jobs:
       
       - name: Create ZIP archive
         run: |
-          Compress-Archive -Path dist/BarcodeQRCodePDF.exe, dist/README.txt -DestinationPath BarcodeQRCodePDF-Windows-${{ github.ref_name }}.zip
+          Compress-Archive -Path dist/BarcodeQRCodePDF_v2.exe, dist/README.txt -DestinationPath BarcodeQRCodePDF_v2-Windows-${{ github.ref_name }}.zip
         shell: pwsh
       
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-executable
-          path: BarcodeQRCodePDF-Windows-${{ github.ref_name }}.zip
+          path: BarcodeQRCodePDF_v2-Windows-${{ github.ref_name }}.zip
 
   build-macos:
     runs-on: macos-latest
@@ -81,26 +81,26 @@ jobs:
         run: |
           brew install create-dmg
           mkdir -p dist/dmg
-          cp -r dist/BarcodeQRCodePDF.app dist/dmg/
+          cp -r dist/BarcodeQRCodePDF_v2.app dist/dmg/
           create-dmg \
-            --volname "BarcodeQRCodePDF" \
+            --volname "BarcodeQRCodePDF_v2" \
             --window-pos 200 120 \
             --window-size 600 400 \
             --icon-size 100 \
             --app-drop-link 450 185 \
-            "BarcodeQRCodePDF-macOS-${{ github.ref_name }}.dmg" \
+            "BarcodeQRCodePDF_v2-macOS-${{ github.ref_name }}.dmg" \
             "dist/dmg/" || true
           
           # create-dmgが失敗した場合は、単純なZIPアーカイブを作成
-          if [ ! -f "BarcodeQRCodePDF-macOS-${{ github.ref_name }}.dmg" ]; then
-            cd dist && zip -r ../BarcodeQRCodePDF-macOS-${{ github.ref_name }}.zip BarcodeQRCodePDF.app
+          if [ ! -f "BarcodeQRCodePDF_v2-macOS-${{ github.ref_name }}.dmg" ]; then
+            cd dist && zip -r ../BarcodeQRCodePDF_v2-macOS-${{ github.ref_name }}.zip BarcodeQRCodePDF_v2.app
           fi
       
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-executable
-          path: BarcodeQRCodePDF-macOS-${{ github.ref_name }}.*
+          path: BarcodeQRCodePDF_v2-macOS-${{ github.ref_name }}.*
 
   create-release:
     needs: [build-windows, build-macos]
@@ -129,10 +129,10 @@ jobs:
             ## ダウンロード
             
             ### Windows版
-            `BarcodeQRCodePDF-Windows-${{ github.ref_name }}.zip` をダウンロードして展開後、`BarcodeQRCodePDF.exe` を実行してください。
+            `BarcodeQRCodePDF_v2-Windows-${{ github.ref_name }}.zip` をダウンロードして展開後、`BarcodeQRCodePDF_v2.exe` を実行してください。
             
             ### macOS版
-            `BarcodeQRCodePDF-macOS-${{ github.ref_name }}.dmg` または `.zip` をダウンロードして実行してください。
+            `BarcodeQRCodePDF_v2-macOS-${{ github.ref_name }}.dmg` または `.zip` をダウンロードして実行してください。
             
             ## 変更点
             詳細な変更点は下記を参照してください。
