@@ -24,7 +24,7 @@ jobs:
       
       - name: Build executable with spec
         run: |
-          pyinstaller barcode.spec
+          pyinstaller barcode_v2.spec
       
       - name: Create README for distribution
         run: |
@@ -75,7 +75,7 @@ jobs:
       
       - name: Build application
         run: |
-          pyinstaller barcode.spec
+          pyinstaller barcode_v2.spec
       
       - name: Create DMG
         run: |
