@@ -761,12 +761,17 @@ class BarcodeApp(QMainWindow):
                         iy = py - ph + 2
                 
                 if code_img:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as f:
-                        code_img.save(f.name)
+                    # Windowsでの権限エラーを回避するため、tempfileを明示的に管理
+                    fd, temp_path = tempfile.mkstemp(suffix='.png')
+                    try:
+                        os.close(fd)  # ファイルハンドルを閉じる
+                        code_img.save(temp_path)
+                        c.drawImage(temp_path, ix, iy, width=iw, height=ih, mask='auto')
+                    finally:
                         try:
-                            c.drawImage(f.name, ix, iy, width=iw, height=ih, mask='auto')
-                        finally:
-                            os.unlink(f.name)
+                            os.unlink(temp_path)
+                        except:
+                            pass  # 削除失敗しても続行
                 
                 idx += 1
                 pi += 1
@@ -859,12 +864,17 @@ class BarcodeApp(QMainWindow):
                     ix = px + 78
                 
                 if code_img:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as f:
-                        code_img.save(f.name)
+                    # Windowsでの権限エラーを回避するため、tempfileを明示的に管理
+                    fd, temp_path = tempfile.mkstemp(suffix='.png')
+                    try:
+                        os.close(fd)  # ファイルハンドルを閉じる
+                        code_img.save(temp_path)
+                        c.drawImage(temp_path, ix, py - row_h + 3, width=iw, height=ih, mask='auto')
+                    finally:
                         try:
-                            c.drawImage(f.name, ix, py - row_h + 3, width=iw, height=ih, mask='auto')
-                        finally:
-                            os.unlink(f.name)
+                            os.unlink(temp_path)
+                        except:
+                            pass  # 削除失敗しても続行
         
         c.save()
     

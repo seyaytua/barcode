@@ -69,7 +69,7 @@ if sys.platform == 'darwin':
         bundle_identifier='com.barcode.qrcode.pdf.v2',
         info_plist={
             'NSHighResolutionCapable': 'True',
-            'CFBundleShortVersionString': '2.0.2',
-            'CFBundleVersion': '2.0.2',
+            'CFBundleShortVersionString': '2.0.3',
+            'CFBundleVersion': '2.0.3',
         },
     )
